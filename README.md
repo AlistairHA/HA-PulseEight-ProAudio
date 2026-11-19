@@ -1,8 +1,32 @@
+<p align="center"><a href="https://www.pulse-eight.com/p/215/proaudio-8"><img src="https://www.pulse-eight.com/generated-assets/products/0000598_555.png" alt="Pulse-Eight ProAudio 8, front and rear" width="520"></a></p>
+
 # Pulse-Eight ProAudio for Home Assistant
 
-This is a custom integration and control panel for the **Pulse-Eight (Zektor) ProAudio** DSP audio matrices: ProAudio8, 16, 1632, 32, 48 and 64. It talks to the unit directly over your LAN on raw TCP port 50005. No cloud connection or extra hardware is needed.
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories) [![Release](https://img.shields.io/github/v/release/AlistairHA/HA-PulseEight-ProAudio)](https://github.com/AlistairHA/HA-PulseEight-ProAudio/releases) ![Home Assistant 2025.1+](https://img.shields.io/badge/Home%20Assistant-2025.1%2B-03A9F4.svg) ![Local control](https://img.shields.io/badge/IoT-local%20only-4CAF50.svg)
+
+Run your **Pulse-Eight ProAudio** multi-zone audio matrix from Home Assistant: see what's playing where, drag zones onto sources, set volumes, mute and power zones, and recall whole-house presets with one tap. It talks to the unit directly over your LAN (TCP port 50005), with no cloud or extra hardware.
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=AlistairHA&repository=HA-PulseEight-ProAudio&category=integration)
+
+## Highlights
+
+- **Routing panel** with colour-coded lines from every input to its zones; drag to route, drop an input on *Disconnect* to clear it, undo anything.
+- **Handles big systems**: zone groups, a compact view, search and a sticky inputs column for 40+ zones.
+- **Presets** such as *AMB Source → Whole house / Upstairs / Master Bedroom*, with volume, power-on and exclusive options.
+- **Zone entities** (media player, volume, mute, power) for dashboards, voice assistants and automations.
+- **Status**: model, firmware, network, protocol flags and digital-input signal type.
 
 ![Routing](docs/routing.png)
+
+## Supported hardware
+
+<p align="center">
+  <a href="https://www.pulse-eight.com/p/215/proaudio-8"><img src="https://www.pulse-eight.com/generated-assets/products/0000580_555.png" alt="ProAudio 8" height="110"></a>
+  <a href="https://www.pulse-eight.com/p/210/proaudio-16"><img src="https://www.pulse-eight.com/generated-assets/products/0000582_555.png" alt="ProAudio 16" height="110"></a>
+  <a href="https://www.pulse-eight.com/p/213/proaudio-3248"><img src="https://www.pulse-eight.com/generated-assets/products/0000589_555.png" alt="ProAudio 3248" height="110"></a>
+</p>
+
+[ProAudio 8](https://www.pulse-eight.com/p/215/proaudio-8), [16](https://www.pulse-eight.com/p/210/proaudio-16), [16 RS](https://www.pulse-eight.com/p/242/proaudio-16-rs), [1632](https://www.pulse-eight.com/p/211/proaudio-1632), [32](https://www.pulse-eight.com/p/212/proaudio-32), [3248](https://www.pulse-eight.com/p/213/proaudio-3248) and [3264](https://www.pulse-eight.com/p/241/proaudio-3264) (and the Zektor-branded equivalents). The model is detected automatically, along with its number of inputs and zones.
 
 ## What you get
 
@@ -57,13 +81,21 @@ To use the card, first add `/pulse_eight_proaudio_static/proaudio-panel.js` as a
 | `pulse_eight_proaudio.zone_power` / `zone_mute` / `zone_volume` | `zones: [2]` or `group: "Outside"`, `on: true` / `mute: true` / `volume: 35` |
 | `pulse_eight_proaudio.send_command` | `command: "BAZ @1,140"` returns `{error_code: 0}`. Factory reset and IP changes are blocked. |
 
-## Installation
+## Install
 
-1. Push this folder to its own GitHub repository (HACS allows only one integration per repository). The contents of this folder must sit at the **root** of the GitHub repository (`hacs.json` and `custom_components/` at the top level, not inside a subfolder). HACS installs from GitHub releases: the included *Release* workflow creates one (for example `v1.1.1`) automatically whenever the `version` in `manifest.json` changes on `main`, and you can also run it by hand from the **Actions** tab. Without a release, HACS shows *"'' is not a usable version"*.
-2. In HACS, go to **⋮ → Custom repositories**, add the repo URL as type **Integration**, install it and restart Home Assistant.
-   *Or copy `custom_components/pulse_eight_proaudio` into `<config>/custom_components/` and restart.*
-3. Go to **Settings → Devices & services → Add integration → Pulse-Eight ProAudio**. Enter the unit's IP address; the port is 50005.
-4. Open **ProAudio** in the sidebar. Start on the **Settings** tab to name your inputs and zones and hide the unused ones, then create your presets.
+**HACS (recommended)**
+
+1. Click the button below, or in HACS open **⋮ → Custom repositories** and add `https://github.com/AlistairHA/HA-PulseEight-ProAudio` as type **Integration**.
+
+   [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=AlistairHA&repository=HA-PulseEight-ProAudio&category=integration)
+2. Download **Pulse-Eight ProAudio**, then restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → Pulse-Eight ProAudio**.
+   Enter the unit's IP address (the port is 50005).
+4. Open **ProAudio** in the sidebar. Start on the **Settings** tab to name your inputs and zones, hide the unused ones and arrange zone groups, then create your presets.
+
+**Manual:** copy `custom_components/pulse_eight_proaudio` into `<config>/custom_components/` and restart Home Assistant.
+
+Updates appear under **Settings → Updates** whenever a new release is published.
 
 ## How it talks to the unit
 
@@ -86,6 +118,15 @@ The integration follows the *ProAudio Universal Serial Protocol* (v1.1) and Puls
 
 Routing applies to the **analog** zone outputs. By default the coax outputs mirror them, so they follow automatically.
 
+## Part of a family
+
+These integrations share the same design, so their panels and entities look and behave alike:
+
+| Integration | What it controls |
+|---|---|
+| [**neo:X+ matrix**](https://github.com/AlistairHA/HA-PulseEight-NeoX) | HDMI/HDBaseT video matrix: routing, CEC display control, link health |
+| [**ProAmp8 amplifier**](https://github.com/AlistairHA/HA-PulseEight-ProAmp) | 8-zone amplifier: per-zone volume, mute and power mode, health |
+
 ## Development
 
 ```bash
@@ -95,3 +136,11 @@ python tests/fake_proaudio.py --port 50005      # simulator for UI work
 ```
 
 `tests/fake_proaudio.py` is a protocol-accurate simulator. It supports ACK on/off, the breakaway suffix, async push to all clients, error codes and standby.
+
+### Releasing
+
+HACS installs from GitHub releases. To publish a change, bump `version` in `custom_components/pulse_eight_proaudio/manifest.json`, commit, then create a release with a matching tag (for example `v1.2.3`). The included *Release* workflow does this automatically when the version changes on `main` (if the `.github` folder is in the repo). Without any release, HACS shows *"'' is not a usable version"*.
+
+---
+
+Product images © Pulse-Eight Ltd, used with permission. This is an independent project and isn't made, supported or endorsed by Pulse-Eight or the Home Assistant project.
