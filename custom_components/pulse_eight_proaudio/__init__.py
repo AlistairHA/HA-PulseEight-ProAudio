@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import logging
 from pathlib import Path
 
@@ -48,7 +50,7 @@ type ProAudioConfigEntry = ConfigEntry[ProAudioHub]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
-VERSION = "1.1.1"
+VERSION = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
 
 ENTRY = vol.Optional("config_entry_id")
 ZONES = vol.All(cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=1, max=128))])
