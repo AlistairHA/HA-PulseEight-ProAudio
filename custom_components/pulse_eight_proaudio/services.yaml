@@ -1,0 +1,104 @@
+route:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    zones:
+      required: false
+      example: '[1, 2, 3]'
+      selector:
+        object: null
+    source:
+      required: true
+      example: Spotify
+      selector:
+        text: null
+    group:
+      example: Upstairs
+      selector:
+        text: {}
+apply_preset:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    preset:
+      required: true
+      example: Whole house
+      selector:
+        text: null
+clear_all:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+zone_power:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    zones:
+      required: false
+      selector:
+        object: null
+    'on':
+      required: true
+      selector:
+        boolean: null
+    group:
+      example: Upstairs
+      selector:
+        text: {}
+zone_mute:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    zones:
+      required: false
+      selector:
+        object: null
+    mute:
+      required: true
+      selector:
+        boolean: null
+    group:
+      example: Upstairs
+      selector:
+        text: {}
+zone_volume:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    zones:
+      required: false
+      selector:
+        object: null
+    volume:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+    group:
+      example: Upstairs
+      selector:
+        text: {}
+send_command:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: pulse_eight_proaudio
+    command:
+      required: true
+      example: BAZ @1,140
+      selector:
+        text: null
