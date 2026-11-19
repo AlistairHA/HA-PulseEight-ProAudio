@@ -93,6 +93,10 @@ MODELS: dict[str, ModelSpec] = {
     "ProAudio32": ModelSpec(32, 32, 32, 16),
     "ProAudio48": ModelSpec(48, 32, 32, 16),
     "ProAudio64": ModelSpec(64, 32, 32, 16),
+    # current Pulse-Eight product names for the same hardware
+    "ProAudio3248": ModelSpec(48, 32, 32, 16),
+    "ProAudio3264": ModelSpec(64, 32, 32, 16),
+    "ProAudio16RS": ModelSpec(16, 16, 16, 16),
 }
 FALLBACK_MODEL = MODELS["ProAudio32"]
 
