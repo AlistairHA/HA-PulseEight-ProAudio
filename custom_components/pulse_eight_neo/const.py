@@ -12,3 +12,7 @@ PANEL_ICON = "mdi:video-switch"
 PANEL_ELEMENT = "neo-matrix-panel"
 STATIC_URL = "/pulse_eight_neo_static"
 SIGNAL_SETTINGS = "pulse_eight_neo_settings_{}"
+CONF_UDP = "udp_push"
+CONF_UDP_PORT = "udp_port"
+DEFAULT_UDP = True
+DEFAULT_UDP_PORT = 8811

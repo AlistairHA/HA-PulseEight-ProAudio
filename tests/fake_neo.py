@@ -23,6 +23,13 @@ class FakeNeo:
         # receive_from=False mimics the documented Port/List (routing only via Port/List/Concise)
         self.receive_from = receive_from
         self.status_led = "on"
+        self.backlight = "on"
+        self.cec_switching = True
+        self.autopause = False
+        self.combokeys = True
+        self.edid = [11] * 8
+        self.ir = [1] * 10
+        self.allowed = {7: [0, 1, 5, 7]}  # Garden Room: Sky Q, Apple TV, Fire TV, Chromecast only
         self.password = password
         self.model = model
         self.inputs = [{"name": n, "signal": i not in (6, 9, 11), "hpd": i not in (6,)} for i, n in enumerate(IN_NAMES)]
@@ -66,7 +73,7 @@ class FakeNeo:
 
     def _details_out(self, i: int) -> dict:
         p = self.outputs[i]
-        d = {"Result": True, **self._port_out(i), "MonitorName": ["SAMSUNG", "LG TV", "SONY TV", "Hisense"][i % 4] if p["hpd"] else "",
+        d = {"Result": True, **self._port_out(i), **({"AllowedSources": self.allowed[i]} if i in self.allowed else {}), "MonitorName": ["SAMSUNG", "LG TV", "SONY TV", "Hisense"][i % 4] if p["hpd"] else "",
              "Signal": "3840x2160p60 YCbCr 4:2:0 8-bit" if p["hpd"] else "No signal", "HDCP": 2 if p["hpd"] else 0,
              "StatusMessage": "OK" if p["link"] or i >= 8 else "No HDBaseT link"}
         if i < 8:
@@ -108,11 +115,13 @@ class FakeNeo:
         if low == "system/health":
             return j({"Temperature0": 41, "Temperature1": 38, "Temperature2": 45, "Temperature3": 36, "Temperature4": 39,
                       "Uptime": 352800, "StatusMessage": "System Healthy", "PSU1": 0, "PSU1Message": "OK",
-                      "InputModulesMessage": "OK", "OutputModulesMessage": "OK"})
+                      "InputModulesMessage": "OK", "OutputModulesMessage": "OK",
+                      "psu": [{"name": "12V", "value": 12.08, "ok": True}, {"name": "5V", "value": 5.02, "ok": True},
+                              {"name": "3.3V", "value": 3.31, "ok": True}]})
         if low == "system/features":
             return j({"CEC": self.cec_enabled, "CEC_Switching": True, "UpdInterval": 3600000, "CEC_Logging": 0, "CEC_Usage": 8,
-                      "BacklightLED": "high", "StatusLED": self.status_led,
-                      "Video": {"Input": {"Bays": 8}, "Output": {"Bays": 10}},
+                      "BacklightLED": self.backlight, "StatusLED": self.status_led,
+                      "Video": {"Input": {"Bays": 8}, "Output": {"Bays": 10}, "Scrambling": True},
                       "Audio": {"Routing": True, "SupportManualMode": True, "Input": {"Bays": 4}, "Output": {"Bays": 10}}})
         if low == "audio/sinkmode":
             return j({"SinkMode": True})
@@ -134,7 +143,8 @@ class FakeNeo:
             if mode == "output" and 0 <= bay < 10:
                 return web.json_response(self._details_out(bay))
             if mode == "input" and 0 <= bay < 12:
-                return j({**self._port_in(bay), "Signal": "3840x2160p60" if self.inputs[bay]["signal"] else "No signal"})
+                return j({**self._port_in(bay), "Signal": "3840x2160p60" if self.inputs[bay]["signal"] else "No signal",
+                      **({"EdidProfile": self.edid[bay]} if bay < 8 else {})})
             return web.json_response({"Result": False, "ErrorMessage": "Invalid port"})
         if parts[:2] == ["port", "remotedetails"] and len(parts) == 4:
             bay = int(parts[3])
@@ -143,7 +153,7 @@ class FakeNeo:
             return web.json_response({"Result": False, "ErrorMessage": "No remote module"})
         if parts[:2] == ["port", "set"] and len(parts) == 4:
             i, o = int(parts[2]), int(parts[3])
-            if not (0 <= i < 8 and 0 <= o < 10):
+            if not (0 <= i < 8 and 0 <= o < 10) or (o in self.allowed and i not in self.allowed[o]):
                 return web.json_response({"Result": False, "ErrorMessage": "Invalid port"})
             self.outputs[o]["src"] = i
             self.outputs[o]["audio"] = i
@@ -161,6 +171,37 @@ class FakeNeo:
             if parts[2] not in ("up", "down", "mute"):
                 return web.json_response({"Result": False, "ErrorMessage": "Invalid method"})
             return j({})
+        if low == "cec/autopause":
+            if request.method == "POST":
+                self.autopause = bool(body["AutoPause"])
+            return j({"AutoPause": self.autopause})
+        if low == "cec/combokeys":
+            return j({"ComboKeys": self.combokeys})
+        if parts[:3] == ["cec", "combokeys", "set"] and len(parts) == 4:
+            self.combokeys = parts[3] == "true"
+            return j({})
+        if low in ("cec/enable", "cec/disable") and request.method == "POST":
+            self.cec_enabled = low == "cec/enable"
+            return j({})
+        if parts[:2] == ["cec", "switching"] and len(parts) == 3 and request.method == "POST":
+            self.cec_switching = parts[2] == "on"
+            return j({})
+        if parts[:2] == ["system", "backlightled"] and len(parts) == 3 and request.method == "POST":
+            self.backlight = parts[2]
+            return j({"Message": "Changed"})
+        if low == "ir/profiles":
+            return j({"Profiles": [{"Id": 1, "Name": "Pulse-Eight remote"}, {"Id": 2, "Name": "Sky Q"}, {"Id": 3, "Name": "Apple TV"}]})
+        if parts[:2] == ["ir", "details"] and len(parts) == 3:
+            return j({"Id": self.ir[int(parts[2])]})
+        if parts[:2] == ["ir", "setprofile"] and len(parts) == 3 and request.method == "POST":
+            self.ir[int(parts[2])] = int(body["Profile"])
+            return j({})
+        if parts[:3] == ["port", "edid", "set"] and len(parts) == 5:
+            prof, bay = int(parts[3]), int(parts[4])
+            if not 0 <= bay < 8:
+                return web.json_response({"Result": False, "ErrorMessage": "Invalid port"})
+            self.edid[bay] = prof
+            return j({})
         if parts[:2] == ["system", "statusled"] and len(parts) == 3 and request.method == "POST":
             self.status_led = parts[2]
             return j({"Message": "Changed"})
@@ -173,6 +214,25 @@ class FakeNeo:
         if low == "system/restart":
             return j({})
         return web.json_response({"Result": False, "ErrorMessage": "Unknown command"}, status=404)
+
+    def udp_state(self) -> list[bytes]:
+        """Identity + port-state datagrams, as the matrix broadcasts them."""
+        from custom_components.pulse_eight_neo.udp import encode, encode_port  # noqa: PLC0415
+        ident = bytearray(54)
+        ident[2:18] = self.model.encode().ljust(16, b"\0")
+        ident[18:34] = b"P8SN0123456".ljust(16, b"\0")
+        ident[34:50] = b"4.12.3".ljust(16, b"\0")
+        recs = [encode_port("input", i, index=i, name=p["name"], signal=p["signal"], hpd=p["hpd"]) for i, p in enumerate(self.inputs)]
+        recs += [encode_port("output", i, index=12 + i, route=p["src"], name=p["name"], hpd=p["hpd"],
+                             signal=self.inputs[p["src"]]["signal"] and p["hpd"], dps=p["dps"] if p["dps"] in (0, 1) else None)
+                 for i, p in enumerate(self.outputs)]
+        return [encode(0, bytes(ident)), encode(2, b"".join(recs)), encode(21, bytes([5, 40, 37, 44, 35, 38]))]
+
+    def send_udp(self, port: int = 8811, host: str = "127.0.0.1") -> None:
+        import socket  # noqa: PLC0415
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            for pkt in self.udp_state():
+                sock.sendto(pkt, (host, port))
 
     async def start(self, host: str = "127.0.0.1", port: int = 0) -> int:
         app = web.Application()
@@ -192,11 +252,15 @@ async def _main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--password", default="")
+    ap.add_argument("--udp", type=int, default=0, help="also send UDP state pushes to this port on 127.0.0.1")
     a = ap.parse_args()
     fake = FakeNeo(a.password)
     port = await fake.start("0.0.0.0", a.port)
     print(f"Fake neo:X+ on :{port}")
-    await asyncio.Event().wait()
+    while True:
+        await asyncio.sleep(2)
+        if a.udp:
+            fake.send_udp(a.udp)
 
 
 if __name__ == "__main__":

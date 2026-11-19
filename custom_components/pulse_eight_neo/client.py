@@ -36,6 +36,16 @@ SINK_MODE_MODELS = {"FF88SA", "FF88S", "FF66SA", "FF64S"}
 # libCEC power status, as reported in the DPS field (negative values = unknown / no CEC)
 CEC_POWER = {0: "on", 1: "standby", 2: "turning_on", 3: "turning_off"}
 
+# Input EDID profiles (Port/EDID/Set/{profile}/{bay}); 101+N clones output N's display EDID.
+EDID_PROFILES = {
+    11: "Dynamic", 0: "1080p stereo", 4: "720p stereo", 3: "1080p Dolby 5.1", 5: "1080p 7.1",
+    2: "Ultra HD 4K", 6: "Ultra HD 4K 7.1", 7: "HDR10 Dolby 5.1", 8: "HDR10 7.1",
+}
+EDID_HDR = {7, 8}  # only offered when System/Features reports Video.Scrambling
+EDID_CLONE_BASE = 101
+
+BACKLIGHT_OPTIONS = ("off", "on", "auto")
+
 # CEC/Volume methods (API docs: Up, Down, Mute — Mute is a toggle)
 CEC_VOLUME = ("Up", "Down", "Mute")
 
@@ -66,6 +76,10 @@ class NeoError(Exception):
 
 class NeoConnectionError(NeoError):
     """Unreachable / bad response."""
+
+
+class NeoNotFound(NeoConnectionError):
+    """HTTP 404: this firmware doesn't have the endpoint."""
 
 
 class NeoAuthError(NeoError):
@@ -185,6 +199,8 @@ class NeoClient:
                 if resp.status in (401, 403) or (resp.status in (301, 302) and "login" in resp.headers.get("Location", "").lower()):
                     self._authed = False
                     raise NeoAuthError("Matrix requires the admin password")
+                if resp.status == 404:
+                    raise NeoNotFound(f"{method} {path}: not supported")
                 if resp.status != 200:
                     raise NeoConnectionError(f"{method} {path}: HTTP {resp.status}")
         except (aiohttp.ClientError, TimeoutError) as err:
@@ -285,10 +301,29 @@ class NeoClient:
         return await self.request(f"CEC/Volume/{method}/{mode}/{int(bay)}")
 
     async def set_status_led(self, on: bool) -> dict:
-        return await self.request(f"System/StatusLED/{'on' if on else 'off'}", method="POST")
+        # capitalised, as used against real hardware (chrisns/pulse-eight-matrix, FF88 MatrixOS 3.10)
+        return await self.request(f"System/StatusLED/{'On' if on else 'Off'}", method="POST", payload={})
 
     async def set_backlight(self, value: str) -> dict:
-        return await self.request(f"System/BacklightLED/{value}", method="POST")
+        return await self.request(f"System/BacklightLED/{value}", method="POST", payload={})
+
+    async def set_edid(self, profile: int, bay: int) -> dict:
+        return await self.request(f"Port/EDID/Set/{int(profile)}/{int(bay)}")
+
+    async def set_cec_enabled(self, on: bool) -> dict:
+        return await self.request(f"CEC/{'Enable' if on else 'Disable'}", method="POST", payload={})
+
+    async def set_cec_switching(self, on: bool) -> dict:
+        return await self.request(f"cec/switching/{'on' if on else 'off'}", method="POST", payload={})
+
+    async def set_cec_autopause(self, on: bool) -> dict:
+        return await self.request("CEC/AutoPause", method="POST", payload={"AutoPause": bool(on)})
+
+    async def set_cec_combokeys(self, on: bool) -> dict:
+        return await self.request(f"CEC/ComboKeys/set/{'true' if on else 'false'}")
+
+    async def set_ir_profile(self, bay: int, profile: int) -> dict:
+        return await self.request(f"IR/SetProfile/{int(bay)}", method="POST", payload={"Profile": int(profile)})
 
     async def cec_key(self, mode: str, bay: int, code: int) -> dict:
         return await self.request(f"cec/key/{mode}/{int(bay)}", method="POST", payload={"Code": f"0x{int(code):02X}"})

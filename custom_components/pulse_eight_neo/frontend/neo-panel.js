@@ -624,7 +624,9 @@ class NeoApp extends HTMLElement {
       <div class="card"><h3>${icon("pulse")}Health</h3><table>
         <tr><td>System</td><td><span class="pill ${/health|ok/i.test(d.status_message || "") ? "ok" : "err"}">${esc(d.status_message || "–")}</span></td></tr>
         ${Object.entries(d.health || {}).filter(([k]) => /Message$/.test(k) && k !== "StatusMessage").map(([k, v]) => `<tr><td>${esc(k.replace(/Message$/, "").replace(/([a-z])([A-Z])/g, "$1 $2").replace("PSU1", "Power supply"))}</td><td>${esc(v)}</td></tr>`).join("")}
+        ${(d.psu || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${p.value != null ? esc(typeof p.value === "number" ? +p.value.toFixed(2) : p.value) : "–"}${p.ok === false ? ` <span class="pill err">Fault</span>` : ""}</td></tr>`).join("")}
         <tr><td>Connection</td><td><span class="pill ${d.connected ? "ok" : "err"}">${d.connected ? "Connected" : "Offline"}</span> <span class="muted small">${esc(d.host)}</span></td></tr>
+        <tr><td>Updates</td><td>${d.udp && d.udp.active ? `<span class="pill ok">Live</span> <span class="muted small">UDP pushes · last ${ago(d.udp.last, now)}</span>` : `<span class="muted">Polling</span>`}</td></tr>
         <tr><td>Last poll</td><td>${ago(d.last_update, now)}</td></tr></table></div>
       <div class="card"><h3>${icon("thermo")}Temperatures</h3>
         ${temps.map(([k, v]) => `<div class="temp-row"><span>Sensor ${+k + 1}</span><span class="tbar ${v >= 55 ? "hot" : v >= 45 ? "warm" : ""}"><span style="width:${Math.min(100, (v / 70) * 100)}%"></span></span><b>${v}°C</b></div>`).join("") || `<p class="muted">Not reported.</p>`}
@@ -752,9 +754,14 @@ class NeoApp extends HTMLElement {
             <td><input type="checkbox" data-c="vis-out" data-zone="${o.zone}" ${dr.hidden_outputs.has(o.zone) ? "" : "checked"} ${dis}></td></tr>`).join("")}</table></div>
         </div>
         <div class="card"><h3>${icon("hdmi")}Inputs</h3>
-          <table class="list names"><tr><th>#</th><th>Name (on matrix)</th><th>Show</th></tr>
+          ${(() => { const hasEdid = d.inputs.some((i) => i.edid != null); const opts = d.edid_options || [];
+            const edidSel = (i) => { if (i.edid == null) return `<span class="muted">–</span>`; const o = opts.some((x) => x.value === i.edid) ? opts : [...opts, { value: i.edid, label: `Custom profile ${i.edid}` }];
+              return `<select data-c="edid" data-src="${i.source}" title="Applied immediately" ${dis}>${o.map((x) => `<option value="${x.value}" ${x.value === i.edid ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select>`; };
+            return `<table class="list names"><tr><th>#</th><th>Name (on matrix)</th>${hasEdid ? `<th title="What the matrix tells this source the displays can show">EDID</th>` : ""}<th>Show</th></tr>
           ${d.inputs.map((i) => `<tr><td>${i.index}<div class="muted small">${i.kind === "audio" ? "Audio" : "HDMI"}</div></td><td><input type="text" value="${esc(dr.inputs[i.source])}" data-c="name-in" data-src="${i.source}" class="${changed("in", i.source, dr.inputs[i.source]) ? "edited" : ""}" ${dis}></td>
+            ${hasEdid ? `<td class="grp-sel">${i.kind === "audio" ? "" : edidSel(i)}</td>` : ""}
             <td><input type="checkbox" data-c="vis-in" data-src="${i.source}" ${dr.hidden_inputs.has(i.source) ? "" : "checked"} ${dis}></td></tr>`).join("")}</table>
+          ${hasEdid ? `<p class="muted small">EDID changes are sent to the matrix straight away. <b>Dynamic</b> lets the matrix pick a format every connected display supports; <b>Copy output N</b> uses that display's own EDID.</p>` : ""}`; })()}
           <p class="muted small">Tip: Alexa needs input and output names that start differently (e.g. “Sky” and “Mini Sky”, not “Sky 1” and “Sky 2”).</p></div>
       </div>`;
   }
@@ -769,9 +776,9 @@ class NeoApp extends HTMLElement {
         <p class="muted small">${inp.signal === "no_signal" ? "⚠ This input currently has no signal. " : ""}Outputs already showing ${esc(inp.name)} are marked.</p>
         ${(d.groups || []).length ? `<div class="chips">${d.groups.map((g) => `<button class="chip" data-a="sendto-group" data-zones="${g.zones.join(",")}">${icon("group")}${esc(g.name)}</button>`).join("")}</div>` : ""}
         <div class="grid ed-zones">${outs.map((o) => {
-          const already = o.source === s.source, on = s.picked.has(o.zone);
-          return `<button class="ed-zone pick ${on ? "on" : ""} ${already ? "already" : ""}" style="--c:${this._colorFor(s.source)}" data-a="sendto-toggle" data-zone="${o.zone}" ${already ? "disabled" : ""}>
-            <span class="sel-box">${on || already ? icon("check") : ""}</span><span>${esc(o.name)}<div class="muted small">${already ? "already showing" : o.source ? `now: ${esc((this._input(o.source) || {}).name || "")}` : "no source"}</div></span></button>`;
+          const already = o.source === s.source, on = s.picked.has(o.zone), blocked = !this._allowed(o.zone, s.source);
+          return `<button class="ed-zone pick ${on ? "on" : ""} ${already || blocked ? "already" : ""}" style="--c:${this._colorFor(s.source)}" data-a="sendto-toggle" data-zone="${o.zone}" ${already || blocked ? "disabled" : ""}>
+            <span class="sel-box">${on || already ? icon("check") : ""}</span><span>${esc(o.name)}<div class="muted small">${blocked ? "not allowed on this output" : already ? "already showing" : o.source ? `now: ${esc((this._input(o.source) || {}).name || "")}` : "no source"}</div></span></button>`;
         }).join("")}</div>
         <label class="check"><input type="checkbox" data-c="sendto-power" ${s.power ? "checked" : ""}> Turn those displays on (CEC)</label>
         <div class="actions"><button class="btn" data-a="sendto-cancel">Cancel</button>
@@ -787,8 +794,23 @@ class NeoApp extends HTMLElement {
   }
 
   /** Apply [[zone, source], ...] with Undo. Video layer: route; audio layer: audio_route. */
+  /** Whether the matrix allows this input on this output (Port/Details AllowedSources). */
+  _allowed(zone, source) {
+    const a = (this._data.outputs[zone - 1] || {}).allowed_sources;
+    return !a || !source || a.includes(source);
+  }
+
   async _routeWithUndo(pairs, message, extra = {}) {
     const layer = this._audioLayer ? "audio" : "video";
+    if (layer === "video") {
+      const blocked = pairs.filter(([z, s]) => !this._allowed(z, s));
+      if (blocked.length) {
+        pairs = pairs.filter(([z, s]) => this._allowed(z, s));
+        const names = blocked.map(([z]) => this._data.outputs[z - 1].name).join(", ");
+        if (!pairs.length) { this._showToast(`Not allowed by the matrix on ${names}`, true); return; }
+        message += ` · skipped ${names} (not allowed)`;
+      }
+    }
     const field = layer === "audio" ? "audio_source" : "source";
     const prev = pairs.map(([z]) => [z, (this._data.outputs[z - 1] || {})[field] || 0])
       .filter(([z, s]) => s !== pairs.find((p) => p[0] === z)[1] && (layer === "audio" || s > 0));
@@ -884,7 +906,7 @@ class NeoApp extends HTMLElement {
         break;
       }
       case "sendto-toggle": { const z = +t.dataset.zone, p = this._sendTo.picked; p.has(z) ? p.delete(z) : p.add(z); this._render(); break; }
-      case "sendto-group": { const p = this._sendTo.picked, zs = nums(t.dataset.zones).filter((z) => this._data.outputs[z - 1].source !== this._sendTo.source); const all = zs.every((z) => p.has(z)); zs.forEach((z) => (all ? p.delete(z) : p.add(z))); this._render(); break; }
+      case "sendto-group": { const p = this._sendTo.picked, zs = nums(t.dataset.zones).filter((z) => this._data.outputs[z - 1].source !== this._sendTo.source && this._allowed(z, this._sendTo.source)); const all = zs.every((z) => p.has(z)); zs.forEach((z) => (all ? p.delete(z) : p.add(z))); this._render(); break; }
       case "sendto-cancel": if (ev.target === t || t.tagName === "BUTTON") { this._sendTo = null; this._render(); } break;
       case "sendto-apply": {
         const s = this._sendTo; this._sendTo = null; this._render();
@@ -945,6 +967,7 @@ class NeoApp extends HTMLElement {
         break;
       }
       case "sendto-power": this._sendTo.power = t.checked; break;
+      case "edid": { const i = this._input(+t.dataset.src); await this._ws("set_edid", { number: +t.dataset.src, profile: +t.value }, `${i ? i.name : "Input"}: EDID updated`); break; }
       case "ed-source": {
         const s = +t.value, e = this._editor;
         for (const z of Object.keys(e.routes)) e.routes[z] = s;

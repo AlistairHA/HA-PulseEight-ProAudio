@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from collections import deque
 from collections.abc import Callable
 import logging
@@ -16,12 +17,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
 from .client import (
+    BACKLIGHT_OPTIONS,
     CEC_KEYS,
+    EDID_CLONE_BASE,
+    EDID_HDR,
+    EDID_PROFILES,
     CEC_POWER,
     MODELS,
     NeoApiError,
     NeoAuthError,
     NeoClient,
+    NeoConnectionError,
+    NeoNotFound,
     NeoError,
     as_bool,
     as_int,
@@ -51,6 +58,17 @@ class NeoHub:
         self.mirrors: dict[int, dict] = {}
         self.concise: dict[str, int] = {}
         self.monitoring: dict = {}
+        self.cec_settings: dict[str, dict | None] = {}
+        self.ir_profiles: list[dict] = []
+        self.ir_details: dict[int, dict] = {}
+        self._unsupported: set[str] = set()
+        # UDP push
+        self.last_udp: float | None = None
+        self.udp_packets = 0
+        self._udp_unsub: Callable[[], None] | None = None
+        self._udp_senders: set[bytes] = set()
+        self._host_ips: set[str] = set()
+        self._fire_handle: asyncio.TimerHandle | None = None
         self.out_details: dict[int, dict] = {}
         self.in_details: dict[int, dict] = {}
         self.remote: dict[int, dict | None] = {}
@@ -79,7 +97,68 @@ class NeoHub:
     def start(self) -> None:
         self._task = self.hass.async_create_background_task(self._loop(), f"{DOMAIN}-{self.entry_id}")
 
+    async def start_udp(self, port: int) -> bool:
+        """Listen for the matrix's state broadcasts. Returns False if the port can't be opened."""
+        from .udp import UdpListener  # noqa: PLC0415
+        host = self.client.host.rsplit(":", 1)[0] if self.client.host.count(":") == 1 else self.client.host
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, 80, type=socket.SOCK_DGRAM)
+            self._host_ips = {i[4][0] for i in infos}
+        except OSError:
+            self._host_ips = {host}
+        try:
+            self._udp_unsub = await UdpListener.subscribe(port, self._udp_accepts, self._udp_packet)
+        except OSError as err:
+            _LOGGER.warning("neo: can't listen for UDP state broadcasts on port %s (%s); polling only", port, err)
+            return False
+        return True
+
+    def _udp_accepts(self, ip: str, pkt: dict) -> bool:
+        if pkt["type"] == 0 and self.serial and pkt["identity"]["serial"] == self.serial:
+            self._udp_senders.add(pkt["sender"])
+            return True
+        return ip in self._host_ips or pkt["sender"] in self._udp_senders
+
+    @callback
+    def _udp_packet(self, pkt: dict) -> None:
+        self.last_udp = time.time()
+        self.udp_packets += 1
+        if pkt["type"] == 2:
+            for r in pkt["ports"]:
+                bay = r["bay"]
+                target = self.outputs.get(bay) if r["mode"] == "output" else self.inputs.get(bay) if r["mode"] == "input" else None
+                if target is None:
+                    continue
+                target["HasSignal"], target["HPD"] = r["signal"], r["hpd"]
+                if r["name"]:
+                    target["Name"] = r["name"]
+                if r["mode"] == "output":
+                    if r["route"] is not None:
+                        target["ReceiveFrom"] = r["route"]
+                        if f"Output{bay + 1}" in self.concise:
+                            self.concise[f"Output{bay + 1}"] = r["route"]
+                    if r["dps"] is not None:
+                        target["DPS"] = r["dps"]
+        elif pkt["type"] == 21:
+            for i, t in enumerate(pkt["temperatures"]):
+                self.health[f"Temperature{i}"] = t
+        # coalesce bursts: at most 4 UI updates a second
+        if self._fire_handle is None:
+            def _go() -> None:
+                self._fire_handle = None
+                self._fire()
+            self._fire_handle = asyncio.get_running_loop().call_later(0.25, _go)
+
+    @property
+    def udp_active(self) -> bool:
+        return self.last_udp is not None and time.time() - self.last_udp < 90
+
     async def stop(self) -> None:
+        if self._udp_unsub:
+            self._udp_unsub()
+            self._udp_unsub = None
+        if self._fire_handle:
+            self._fire_handle.cancel()
         if self._task:
             self._task.cancel()
             try:
@@ -91,7 +170,8 @@ class NeoHub:
     async def _loop(self) -> None:
         while True:
             try:
-                await asyncio.wait_for(self._wake.wait(), self.fast)
+                # with live UDP pushes, polling is only a safety net
+                await asyncio.wait_for(self._wake.wait(), max(self.fast, 30) if self.udp_active else self.fast)
             except TimeoutError:
                 pass
             self._wake.clear()
@@ -131,6 +211,18 @@ class NeoHub:
                     self.modes[key] = await c.setting(path)
                 self.modes["network"] = await c.setting("Network/Settings")
                 self.monitoring = await c.monitoring() or {}
+                for key, path in (("autopause", "CEC/AutoPause"), ("combokeys", "CEC/ComboKeys"), ("ir_profiles", "IR/Profiles")):
+                    if path in self._unsupported:
+                        continue
+                    try:
+                        self.cec_settings[key] = await c.request(path, check=False)
+                    except NeoNotFound:
+                        self._unsupported.add(path)
+                        self.cec_settings[key] = None
+                    except NeoConnectionError:
+                        pass
+                profiles = first(self.cec_settings.get("ir_profiles"), "Profiles", default=[])
+                self.ir_profiles = [x for x in profiles if isinstance(x, dict) and as_int(first(x, "Id")) is not None] if isinstance(profiles, list) else []
         except NeoAuthError:
             self.auth_error = True
             self._mark(False)
@@ -169,7 +261,10 @@ class NeoHub:
                 self.out_details[bay] = await c.port_details("Output", bay)
             except NeoError as err:
                 _LOGGER.debug("Port/Details Output %s: %s", bay, err)
-            if self.is_hdbt(bay) and self._linked(bay) is not False:
+            embedded = first(self.out_details.get(bay), "RemoteDetails")
+            if isinstance(embedded, dict) and embedded:
+                self.remote[bay] = embedded  # some firmware includes it in Port/Details
+            elif self.is_hdbt(bay) and self._linked(bay) is not False:
                 try:
                     self.remote[bay] = await c.remote_details("Output", bay)
                 except NeoApiError:
@@ -178,6 +273,11 @@ class NeoHub:
                     pass
             else:
                 self.remote[bay] = None
+            if self.ir_profiles:
+                try:
+                    self.ir_details[bay] = await c.request(f"IR/Details/{bay}")
+                except NeoError:
+                    pass
         for bay in sorted(self.inputs):
             try:
                 self.in_details[bay] = await c.port_details("Input", bay)
@@ -255,6 +355,32 @@ class NeoHub:
         v = as_int(first(self.outputs.get(bay), "AudioReceived", "AudioRecieved"))
         return v if v is not None and v >= 0 else None
 
+    def allowed_sources(self, bay: int) -> list[int] | None:
+        v = first(self.out_details.get(bay), "AllowedSources", default=first(self.outputs.get(bay), "AllowedSources"))
+        return [int(x) for x in v if as_int(x) is not None] if isinstance(v, list) else None
+
+    def source_allowed(self, out_bay: int, in_bay: int) -> bool:
+        a = self.allowed_sources(out_bay)
+        return a is None or in_bay in a
+
+    @property
+    def psu(self) -> list[dict]:
+        v = first(self.health, "psu", "PSU")
+        return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+
+    def edid_profile(self, bay: int) -> int | None:
+        return as_int(first(self.in_details.get(bay), "EdidProfile", default=first(self.inputs.get(bay), "EdidProfile")))
+
+    def edid_options(self) -> dict[int, str]:
+        hdr = bool(first(first(self.features, "Video"), "Scrambling"))
+        opts = {k: v for k, v in EDID_PROFILES.items() if hdr or k not in EDID_HDR}
+        for b in sorted(self.outputs):
+            opts[EDID_CLONE_BASE + b] = f"Copy output {b + 1}: {self.output_name(b)}"
+        return opts
+
+    def ir_profile(self, bay: int) -> int | None:
+        return as_int(first(self.ir_details.get(bay), "Id"))
+
     def tv_power(self, bay: int) -> str | None:
         dps = as_int(first(self.outputs.get(bay), "DPS"))
         return CEC_POWER.get(dps) if dps is not None else None
@@ -292,6 +418,8 @@ class NeoHub:
             raise ServiceValidationError(f"Invalid output(s) {bad or outputs}")
         if input_bay is not None and input_bay not in self.inputs:
             raise ServiceValidationError(f"Invalid input {input_bay + 1}")
+        if input_bay is not None and (blocked := [self.output_name(o) for o in outputs if not self.source_allowed(o, input_bay)]):
+            raise ServiceValidationError(f"{self.input_name(input_bay)} isn't allowed on {', '.join(blocked)} (matrix routing restrictions)")
 
     async def route(self, outputs: list[int], input_bay: int, *, power_on: bool = False) -> None:
         """Route video (and following audio) of input_bay to each output (bays, zero-based)."""
@@ -339,6 +467,53 @@ class NeoHub:
             await self.cec_key(mode, bay, CEC_KEYS[{"Up": "volume_up", "Down": "volume_down", "Mute": "mute"}[method]])
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
+
+    async def set_edid(self, bay: int, profile: int) -> None:
+        if bay not in self.inputs:
+            raise ServiceValidationError(f"Invalid input {bay + 1}")
+        if profile not in self.edid_options() and profile != self.edid_profile(bay):
+            raise ServiceValidationError(f"EDID profile {profile} isn't supported on this matrix")
+        await self._run(self.client.set_edid(profile, bay))
+        self.in_details.setdefault(bay, {})["EdidProfile"] = profile
+        self._fire()
+
+    async def set_backlight(self, value: str) -> None:
+        if value not in BACKLIGHT_OPTIONS:
+            raise ServiceValidationError(f"Backlight must be one of {BACKLIGHT_OPTIONS}")
+        await self._run(self.client.set_backlight(value))
+        self.features["BacklightLED"] = value
+        self._fire()
+
+    async def set_cec_option(self, key: str, on: bool) -> None:
+        c = self.client
+        fn = {"cec": c.set_cec_enabled, "cec_switching": c.set_cec_switching,
+              "autopause": c.set_cec_autopause, "combokeys": c.set_cec_combokeys}[key]
+        await self._run(fn(on))
+        if key == "cec":
+            self.features["CEC"] = on
+        elif key == "cec_switching":
+            self.features["CEC_Switching"] = on
+        elif key == "autopause":
+            self.cec_settings["autopause"] = {"AutoPause": on}
+        else:
+            self.cec_settings["combokeys"] = {"ComboKeys": on}
+        self._fire()
+
+    def cec_option(self, key: str) -> bool | None:
+        if key == "cec":
+            return as_bool(first(self.features, "CEC"))
+        if key == "cec_switching":
+            return as_bool(first(self.features, "CEC_Switching"))
+        if key == "autopause":
+            return as_bool(first(self.cec_settings.get("autopause"), "AutoPause"))
+        return as_bool(first(self.cec_settings.get("combokeys"), "ComboKeys"))
+
+    async def set_ir_profile(self, bay: int, profile: int) -> None:
+        if profile not in {as_int(first(p, "Id")) for p in self.ir_profiles}:
+            raise ServiceValidationError(f"Unknown IR profile {profile}")
+        await self._run(self.client.set_ir_profile(bay, profile))
+        self.ir_details[bay] = {**(self.ir_details.get(bay) or {}), "Id": profile}
+        self._fire()
 
     async def set_status_led(self, on: bool) -> None:
         await self._run(self.client.set_status_led(on))
@@ -453,6 +628,7 @@ class NeoHub:
                 "kind": "hdbt" if hdbt else "hdmi", "port_type": self.port_type(b) or None,
                 "hdbt_variant": self.hdbt_variant(b) if hdbt else None,
                 "cec_version": first(self.outputs[b], "CEC_version", "CECVersion"),
+                "allowed_sources": [x + 1 for x in a] if (a := self.allowed_sources(b)) is not None else None,
                 "source": (src + 1) if src is not None else 0,
                 "audio_source": (a + 1) if (a := self.audio_source_of(b)) is not None else 0,
                 "tv_power": power, "power": None if power is None else power in ("on", "turning_on"),
@@ -477,6 +653,7 @@ class NeoHub:
                 "index": b + 1, "hidden": b + 1 in hid_in, "zones": fed.get(b, []),
                 "signal": None if sig is None else ("signal" if sig else "no_signal"),
                 "hpd": as_bool(first(self.inputs[b], "HPD")), "video": first(d, "Signal"),
+                "edid": self.edid_profile(b),
             })
         h = self.health
         temps = {k[11:]: v for k, v in h.items() if k.startswith("Temperature") and k[11:].isdigit()}
@@ -502,6 +679,10 @@ class NeoHub:
             "monitoring": {"last_contact_s": as_int(first(self.monitoring, "LastContact")),
                            "installer_id": first(self.monitoring, "InstallerId") or None},
             "system_status_code": as_int(first(self.details, "Status")),
+            "psu": [{"name": first(x, "name", "Name", default=f"Supply {i + 1}"), "value": first(x, "value", "Value"),
+                     "ok": as_bool(first(x, "ok", "OK"))} for i, x in enumerate(self.psu)],
+            "edid_options": [{"value": k, "label": v} for k, v in self.edid_options().items()],
+            "udp": {"active": self.udp_active, "last": self.last_udp, "packets": self.udp_packets},
             "zone_count": len(self.outputs), "last_update": self.last_update, "last_detail": self.last_detail,
             "server_time": time.time(), "errors": list(self.errors),
             "inputs": ins, "outputs": outs, "presets": self.presets, "groups": self.settings["groups"],

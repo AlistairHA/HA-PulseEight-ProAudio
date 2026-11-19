@@ -19,6 +19,10 @@ from . import websocket_api
 from .client import CEC_KEYS, NeoAuthError, NeoClient, NeoError
 from .const import (
     CONF_DETAIL_INTERVAL,
+    CONF_UDP,
+    CONF_UDP_PORT,
+    DEFAULT_UDP,
+    DEFAULT_UDP_PORT,
     CONF_SCAN_INTERVAL,
     DEFAULT_DETAIL_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
@@ -32,7 +36,7 @@ from .const import (
 from .entity import unit_device
 from .hub import NeoHub
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.MEDIA_PLAYER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.MEDIA_PLAYER, Platform.REMOTE, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 VERSION = "1.0.0"
 type NeoConfigEntry = ConfigEntry[NeoHub]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -65,6 +69,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoConfigEntry) -> bool:
     dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **unit_device(hub))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     hub.start()
+    if entry.options.get(CONF_UDP, DEFAULT_UDP):
+        await hub.start_udp(entry.options.get(CONF_UDP_PORT, DEFAULT_UDP_PORT))
     entry.async_on_unload(entry.add_update_listener(_reload))
     if PANEL_URL not in hass.data.get(frontend.DATA_PANELS, {}):
         await panel_custom.async_register_panel(

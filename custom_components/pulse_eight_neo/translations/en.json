@@ -22,6 +22,13 @@
           "host": "Host",
           "password": "Admin password"
         }
+      },
+      "discovery_confirm": {
+        "title": "Add discovered neo matrix",
+        "description": "Found a {model} at {host}. Enter the web UI admin password if your firmware requires one, otherwise leave it blank.",
+        "data": {
+          "password": "Admin password"
+        }
       }
     },
     "error": {
@@ -33,8 +40,11 @@
       "already_configured": "This matrix is already configured.",
       "reauth_successful": "Password updated.",
       "reconfigure_successful": "Address updated.",
-      "wrong_device": "That address belongs to a different matrix."
-    }
+      "wrong_device": "That address belongs to a different matrix.",
+      "cannot_connect": "Could not reach the matrix on port 80.",
+      "not_neo": "That device isn't a neo matrix (it may be a ProAmp8 or ProAudio)."
+    },
+    "flow_title": "{name}"
   },
   "options": {
     "step": {
@@ -42,7 +52,13 @@
         "title": "neo matrix options",
         "data": {
           "scan_interval": "Routing/status poll (seconds)",
-          "detail_interval": "HDBaseT, health and details poll (seconds)"
+          "detail_interval": "HDBaseT, health and details poll (seconds)",
+          "udp_push": "Instant updates from the matrix's UDP broadcasts",
+          "udp_port": "UDP broadcast port"
+        },
+        "data_description": {
+          "udp_push": "Needs Home Assistant on the same network segment (VLAN) as the matrix. Polling continues as a fallback, every 30 s while pushes arrive.",
+          "udp_port": "8811 unless you changed it."
         }
       }
     }
@@ -82,6 +98,12 @@
       },
       "cable_length": {
         "name": "Estimated cable length"
+      },
+      "psu": {
+        "name": "Power supply {name}"
+      },
+      "last_push": {
+        "name": "Last state push"
       }
     },
     "binary_sensor": {
@@ -103,6 +125,42 @@
     "switch": {
       "status_led": {
         "name": "Status LEDs"
+      },
+      "cec": {
+        "name": "CEC"
+      },
+      "cec_switching": {
+        "name": "CEC automatic switching"
+      },
+      "cec_autopause": {
+        "name": "CEC auto-pause"
+      },
+      "cec_combokeys": {
+        "name": "CEC combination keys"
+      }
+    },
+    "select": {
+      "input_edid": {
+        "name": "Input {input} EDID"
+      },
+      "backlight": {
+        "name": "Logo backlight",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "auto": "Auto"
+        }
+      },
+      "ir_profile": {
+        "name": "IR profile"
+      }
+    },
+    "remote": {
+      "display_remote": {
+        "name": "Display remote"
+      },
+      "source_remote": {
+        "name": "Input {input} source remote"
       }
     }
   },

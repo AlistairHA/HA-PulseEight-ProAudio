@@ -21,6 +21,12 @@
       },
       "firmware": {
         "default": "mdi:chip"
+      },
+      "psu": {
+        "default": "mdi:flash"
+      },
+      "last_push": {
+        "default": "mdi:access-point"
       }
     },
     "binary_sensor": {
@@ -45,6 +51,37 @@
         "state": {
           "off": "mdi:led-off"
         }
+      },
+      "cec": {
+        "default": "mdi:hdmi-port"
+      },
+      "cec_switching": {
+        "default": "mdi:video-input-hdmi"
+      },
+      "cec_autopause": {
+        "default": "mdi:pause-circle-outline"
+      },
+      "cec_combokeys": {
+        "default": "mdi:keyboard-outline"
+      }
+    },
+    "select": {
+      "input_edid": {
+        "default": "mdi:monitor-shimmer"
+      },
+      "backlight": {
+        "default": "mdi:lightbulb-on-outline"
+      },
+      "ir_profile": {
+        "default": "mdi:remote"
+      }
+    },
+    "remote": {
+      "display_remote": {
+        "default": "mdi:remote-tv"
+      },
+      "source_remote": {
+        "default": "mdi:remote"
       }
     }
   },

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import EntityCategory, UnitOfLength, UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfElectricCurrent, UnitOfElectricPotential, UnitOfLength, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -23,6 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoConfigEntry, add: Add
     ents += [Temperature(hub, k) for k, _ in sorted((k[11:], v) for k, v in hub.health.items() if k.startswith("Temperature") and k[11:].isdigit())]
     if first(hub.health, "Uptime") is not None:
         ents.append(LastBoot(hub))
+    ents += [PowerSupply(hub, i) for i in range(len(hub.psu))]
+    ents.append(LastPush(hub))
     for b in sorted(hub.outputs):
         ents.append(OutputSignal(hub, b))
         if hub.is_hdbt(b):
@@ -157,3 +159,51 @@ class CableLength(NeoOutputEntity, SensorEntity):
     @property
     def native_value(self):
         return first(self.hub.out_details.get(self.bay), "EstimatedCableLength")
+
+
+class PowerSupply(NeoEntity, SensorEntity):
+    """One reading from System/Health "psu" (named rail voltage or current)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "psu"
+
+    def __init__(self, hub, idx: int) -> None:
+        super().__init__(hub, f"psu_{idx}")
+        self.idx = idx
+        name = str(first(hub.psu[idx], "name", "Name", default=f"Supply {idx + 1}"))
+        self._attr_translation_placeholders = {"name": name}
+        if "current" in name.lower() or name.lower().endswith("a"):
+            self._attr_device_class, self._attr_native_unit_of_measurement = SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE
+        else:
+            self._attr_device_class, self._attr_native_unit_of_measurement = SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT
+
+    @property
+    def native_value(self):
+        psu = self.hub.psu
+        return first(psu[self.idx], "value", "Value") if self.idx < len(psu) else None
+
+    @property
+    def extra_state_attributes(self):
+        psu = self.hub.psu
+        return {k: v for k, v in psu[self.idx].items() if k.lower() not in ("value", "name")} if self.idx < len(psu) else None
+
+
+class LastPush(NeoEntity, SensorEntity):
+    """When the last UDP state broadcast arrived (empty if pushes aren't reaching HA)."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "last_push"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, hub) -> None:
+        super().__init__(hub, "last_push")
+
+    @property
+    def native_value(self):
+        return dt_util.utc_from_timestamp(self.hub.last_udp) if self.hub.last_udp else None
+
+    @property
+    def extra_state_attributes(self):
+        return {"packets": self.hub.udp_packets}

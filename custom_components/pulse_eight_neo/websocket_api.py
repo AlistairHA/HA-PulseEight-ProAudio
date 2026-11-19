@@ -27,7 +27,7 @@ def _hub(hass, eid) -> NeoHub:
 @callback
 def async_register(hass: HomeAssistant) -> None:
     for h in (ws_list_units, ws_subscribe, ws_route, ws_audio_route, ws_cec_power, ws_cec_key, ws_rename, ws_set_hidden,
-              ws_save_groups, ws_save_preset, ws_delete_preset, ws_apply_preset, ws_refresh):
+              ws_save_groups, ws_save_preset, ws_delete_preset, ws_apply_preset, ws_refresh, ws_set_edid):
         websocket_api.async_register_command(hass, h)
 
 
@@ -113,6 +113,11 @@ async def ws_cec_key(hub, msg):
 @_cmd({vol.Required("mode"): vol.In(["Input", "Output"]), vol.Required("number"): vol.Coerce(int), vol.Required("name"): str}, admin=True)
 async def ws_rename(hub, msg):
     await hub.rename(msg["mode"], msg["number"] - 1, msg["name"])
+
+
+@_cmd({vol.Required("number"): vol.Coerce(int), vol.Required("profile"): vol.Coerce(int)}, admin=True)
+async def ws_set_edid(hub, msg):
+    await hub.set_edid(msg["number"] - 1, msg["profile"])
 
 
 @_cmd({vol.Optional("hidden_inputs"): [vol.Coerce(int)], vol.Optional("hidden_outputs"): [vol.Coerce(int)]}, admin=True)

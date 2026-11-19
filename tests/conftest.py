@@ -27,9 +27,15 @@ async def fake(fake_kwargs):
 
 
 @pytest.fixture
-def entry(fake):
+def entry_options():
+    return {"udp_push": False}
+
+
+@pytest.fixture
+def entry(fake, entry_options):
     return MockConfigEntry(domain=DOMAIN, title="neo:X+", unique_id="P8SN0123456",
-                           data={"host": f"127.0.0.1:{fake.port}", "password": fake.password})
+                           data={"host": f"127.0.0.1:{fake.port}", "password": fake.password},
+                           options=entry_options)
 
 
 @pytest.fixture

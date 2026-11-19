@@ -65,7 +65,8 @@ class NeoOutput(NeoOutputEntity, MediaPlayerEntity):
     @property
     def source_list(self) -> list[str]:
         hidden = set(self.hub.settings["hidden_inputs"])
-        return [self.hub.input_name(b) for b in self.hub.video_input_bays() if b + 1 not in hidden]
+        return [self.hub.input_name(b) for b in self.hub.video_input_bays()
+                if b + 1 not in hidden and self.hub.source_allowed(self.bay, b)]
 
     @property
     def source(self) -> str | None:
