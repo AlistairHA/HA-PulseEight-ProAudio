@@ -1,0 +1,41 @@
+route:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    outputs: {example: "[1, 2]", selector: {object: {}}}
+    group: {example: "Downstairs", selector: {text: {}}}
+    input: {required: true, example: "Sky Q", selector: {text: {}}}
+    power_on: {default: false, selector: {boolean: {}}}
+route_audio:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    outputs: {example: "[3]", selector: {object: {}}}
+    group: {selector: {text: {}}}
+    input: {required: true, example: "9", selector: {text: {}}}
+cec_power:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    outputs: {example: "[\"Lounge TV\"]", selector: {object: {}}}
+    group: {selector: {text: {}}}
+    "on": {required: true, selector: {boolean: {}}}
+cec_key:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    outputs: {example: "[1]", selector: {object: {}}}
+    group: {selector: {text: {}}}
+    key: {required: true, example: "volume_up", selector: {text: {}}}
+cec_volume:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    outputs: {example: "[1]", selector: {object: {}}}
+    group: {selector: {text: {}}}
+    action: {required: true, selector: {select: {options: ["up", "down", "mute"]}}}
+apply_preset:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+    preset: {required: true, example: "Movie night", selector: {text: {}}}
+refresh:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}
+get_status:
+  fields:
+    config_entry_id: {selector: {config_entry: {integration: pulse_eight_neo}}}

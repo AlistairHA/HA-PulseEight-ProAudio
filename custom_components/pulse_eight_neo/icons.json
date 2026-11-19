@@ -1,0 +1,77 @@
+{
+  "entity": {
+    "sensor": {
+      "status": {
+        "default": "mdi:heart-pulse"
+      },
+      "link_status": {
+        "default": "mdi:ethernet-cable"
+      },
+      "link_quality": {
+        "default": "mdi:signal",
+        "state": {
+          "poor": "mdi:signal-cellular-1"
+        }
+      },
+      "cable_length": {
+        "default": "mdi:tape-measure"
+      },
+      "video_format": {
+        "default": "mdi:video-4k-box"
+      },
+      "firmware": {
+        "default": "mdi:chip"
+      }
+    },
+    "binary_sensor": {
+      "display_connected": {
+        "default": "mdi:television"
+      },
+      "input_signal": {
+        "default": "mdi:video-input-hdmi"
+      },
+      "hdbaset_link": {
+        "default": "mdi:ethernet"
+      }
+    },
+    "button": {
+      "refresh": {
+        "default": "mdi:refresh"
+      }
+    },
+    "switch": {
+      "status_led": {
+        "default": "mdi:led-on",
+        "state": {
+          "off": "mdi:led-off"
+        }
+      }
+    }
+  },
+  "services": {
+    "route": {
+      "service": "mdi:video-switch"
+    },
+    "route_audio": {
+      "service": "mdi:speaker"
+    },
+    "cec_power": {
+      "service": "mdi:power"
+    },
+    "cec_key": {
+      "service": "mdi:remote"
+    },
+    "apply_preset": {
+      "service": "mdi:playlist-play"
+    },
+    "refresh": {
+      "service": "mdi:refresh"
+    },
+    "get_status": {
+      "service": "mdi:information"
+    },
+    "cec_volume": {
+      "service": "mdi:volume-high"
+    }
+  }
+}
